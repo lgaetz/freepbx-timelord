@@ -1,0 +1,61 @@
+
+!!!//////////////////////////////////////////////////////////////////////////////////////////
+Asterisk Timeclock - Matthew G. Lemens (matthew at lemens-ts dot com)
+
+For support, http://www.asterisktimeclock.org
+
+Original author of PHP Timeclock 1.04 located at:
+http://timeclock.sourceforge.net/
+
+PHP Timeclock is a web-based solution.
+It had to be modified to connect with asterisk, and asterisk configuration files had to be created to work with calling in by phone to clockin/out. 
+Modified by Matthew G. Lemens (matthew at lemens-ts dot com)
+
+!!!//////////////////////////////////////////////////////////////////////////////////////////
+
+Instructions
+
+The time clock consists of:
+/etc/asterisk/exten.timeclockapp.conf
+/var/www/localhost/htdocs/timeclockweb
+/var/lib/asterisk/sounds/timeclock
+And mysql database: timeclock
+
+Copy exten.timeclockapp.conf to /etc/asterisk/exten.timeclockapp.conf
+
+Open exten.timeclockapp.conf:
+Change extension 9990 to something that fits your dialplan.
+Also change the mysql password to what your mysql database password is.
+
+
+add: 
+#include "exten.timeclockapp.conf"
+to the bottom of /etc/asterisk/extensions.conf
+
+
+Copy "timeclock" folder to /var/lib/asterisk/sounds/timeclock
+
+Copy "timeclockweb" folder to /var/www/localhost/htdocs/timeclockweb
+(/var/www/localhost/htdocs/ being YOUR web directory!)
+
+Open /var/www/localhost/htdocs/timeclockweb/config.inc.php
+Edit $db_hostname, $db_username, $db_password, $db_name to your mysql settings.
+Save and close file.
+
+Copy "timeclock.sql" to /timeclock.sql
+-cp timeclock.sql /
+
+You must create a blank mysql database called "timeclock":
+mysql -u root -p
+(now enter your mysql pword)
+
+mysql> CREATE DATABASE timeclock;
+
+Then you will be able to import timeclock.sql into the database "timeclock" that you created.
+bash#> mysql -u root timeclock < /timeclock.sql
+(or some form of that command, add the -p option to specify password if access denied)
+
+Test by calling 9990 (or whatever you changed it to). Watch the asterisk cli for errors to help troubleshoot.
+Checkout webadmin at yoursite.com/timeclockweb/index.php
+(user/pword: admin/admin)
+
