@@ -1,0 +1,121 @@
+This text will step through installing php timeclock in a PBXinaFlash box and making an extension to punch in or out with.
+
+We are starting with php timeclock phptimeclock-1.1.0.tar.gz, which can be found at http://phptimeclock.com/.
+
+1.  Extract phptimeclock-1.1.0.tar.gz to dektop and follow INSTALL file in docs folder.  In my world this means I have copied the extracted folder, renamed it to phptimeclock and copied it to /var/www/html.  Then I go to Freepbx and use phpMyAdmin from the Tools menu. Install it from Module Admin if you haven't already.  Create a database, user, assign the privledges, and import the create_tables.sql. Follow the rest of the INSTALL instructions.
+
+2.  Since I copy the folder over using WinScp, I have to run these two commands to change the owner and group from root to asterisk.
+chown -R asterisk /var/www/html/phptimeclock
+chgrp -R asterisk /var/www/html/phptimeclock
+
+3.  Now you should have phptimclock installed, open it in a browser, make an office, a group, and a user.  You can play with the system settings to tweak it, however for my example we are using passwords so edit system settings and change use_passwd: 	yes , then click next at the bottom to change the settings.
+    If you get an error that it can't write changes the you didn't complete step two correctly.
+
+4.  To add the app to the Kennon menu, copy ico_clock.png to /var/www/html/welcome.  Then edit /var/www/html/welcome/.htindex.cfg and add a line such as(remove quotes):
+    " 2,timeclock,./phptimeclock,Timeclock,ico_clock.png "
+Which basically traslates to level,menu label,directory,Icon Label,icon file.  Search Forum for more info. Now you should be able to go to Menu Configuration and add the timeclock item to your User Menu.
+
+5.  Now for the dialplan.  For this example we will add this to [from-internal-custom] in /etc/asterisk/extensions_custom.conf.  Also even though phptimeclock will alow for multiple statuses such as in, out, break, lunch, etc., I am only doing in and out as that is essentially what they all are anyways.  This is written to check the current status and change it, no user choice.  I think this is best way to reduce I-D-10-T errors.
+
+Copy the context below to the bottom of /etc/asterisk/extension_custom.conf
+
+[timeclock]
+;\\Don't let word wrap getcha, some lines are long
+;\\ask for user&pass and create variables, Read(variable[,filename][,maxdigits][,option][,attempts][,timeout]) 
+exten => s,1,Answer
+exten => s,n(again),Wait(1)
+exten => s,n,Read(user,tm_userid,,,3,5)
+exten => s,n,NoOp(${user})
+exten => s,n,Wait(2)
+exten => s,n,Read(pass,tm_pass,,,3,5)
+exten => s,n,NoOp(${pass})
+
+;\\Connect to db, if connection fails goto error context,MYSQL(Connect connid dhhost dbuser dbpass dbname) 
+exten => s,n,MYSQL(Connect connid localhost timeclock timeclock timeclock)
+exten => s,n,NoOp(${connid})
+exten => s,n,GotoIf($["${connid}" = ""]?error,1)
+
+;\\check empfullname and employee_passwd in employees table - if yes get tstamp set variable
+exten => s,n,MYSQL(Query resultid ${connid} SELECT\ tstamp\ FROM\ employees\ WHERE\ empfullname=\${user}\ AND\ employee_passwd\ =\ encrypt(\"${pass}\"\,\"xy\"))
+exten => s,n,MYSQL(Fetch fetchid ${resultid} tstamp)
+exten => s,n,MYSQL(Clear ${resultid})
+exten => s,n,NoOp(${fetchid})
+exten => s,n,GotoIf($["${fetchid}" = "0"]?fail:next)
+
+exten => s,n(fail),Playback(tm_login_incorrect)
+exten => s,n,goto(again)
+
+exten => s,n(next),NoOp("moving On")
+exten => s,n,NoOp(${tstamp})
+
+;check tstamp for null, first time login will be null so we set stat to in and jump to n(bad) line to complete Punch In, if not Null the stat will be changed in next section
+exten => s,n,Set(stat="in")
+exten => s,n,GotoIf($["${tstamp}" = "NULL"]?initial)
+
+;\\check inout status from info where fullname=empfullname and timestamp=tstamp, 
+exten => s,n,MYSQL(Query resultid ${connid} SELECT\ info.inout\ FROM\ info\ WHERE\ fullname=\${user}\ AND\ timestamp=\${tstamp})
+exten => s,n,MYSQL(Fetch fetchid ${resultid} inout)
+exten => s,n,MYSQL(Clear ${resultid})
+exten => s,n,NoOp(${inout})
+
+;\\check inout, toggle and set stat, So if their last action was Punch In now Punch Out or reverse  
+exten => s,n,set(stat=${IF($[ ${inout} = in]?out:in)})   ;   Set(foo=${IF($[ ${x} = 7]?tval:fval)}) 
+exten => s,n,NoOp(${stat})
+
+;\\entry from Goto in tstamp was null
+exten => s,n(initial),NoOp(initial login)
+
+;\\Make timestamp
+exten => s,n,MYSQL(Query resultid ${connid} SELECT\ unix_timestamp( utc_timestamp( ) ) )
+exten => s,n,MYSQL(Fetch fetchid ${resultid} time)
+exten => s,n,MYSQL(Clear ${resultid})
+exten => s,n,NoOp(${time})
+
+;\\We use caller number to see where the punch comes from
+exten => s,n,NoOp("CallerID is "${CALLERID(num)})
+
+;\\insert punch record in info tbl
+exten => s,n,MYSQL(Query resultid ${connid} UPDATE\ employees\ SET\ tstamp=\'\${time}\'\ WHERE \empfullname=\${user})
+exten => s,n,MYSQL(Clear ${resultid})
+
+;\\then update tstamp in employees tble, this is used to set the users last action
+exten => s,n,MYSQL(Query resultid ${connid} INSERT\ INTO\ info\ SET\ fullname=\'\${user}\'\, info.inout=\'\${stat}\'\, timestamp=\'\${time}\'\, ipaddress=\'\${CALLERID(num)}\'\)
+exten => s,n,MYSQL(Fetch fetchid ${resultid})
+exten => s,n,MYSQL(Clear ${resultid})
+
+;\\Say goodbye
+exten => s,n,GotoIf($["${stat}" = "in"]?in:out)
+exten => s,n(in),Playback(tm_clocked_in)
+exten => s,n,goto(done)
+exten => s,n(out),Playback(tm_clocked_out)
+exten => s,n,goto(done)
+
+;\\So we can see if connection id and result id is increasing
+exten => s,n(done),NoOp("Connection ID is "${connid})
+exten => s,n,NoOp("Result ID is "${resultid})
+
+exten => s,n,Wait(1)
+exten => s,n,MYSQL(Clear ${resultid})
+exten => s,n,MYSQL(Disconnect ${connid})
+exten => h,1,mysql(clear ${resultid})
+exten => h,n,mysql(disconnect ${connid}
+
+exten => error,1,NoOp,MYSQL(Disconnect ${connid})
+exten => error,n,Playback(tm_contact_admin)
+exten => error,n,Hangup 
+;end of timeclock context
+
+6.  Now we will add to Freepbx registry.
+Go to Custom Destinations in Freepbx.  
+	Custom Destination: timeclock,s,1
+	Description: Timeclock
+	Click Submit Changes and Apply
+Go to Misc Applications in Freepbx
+	Description: Timeclock
+	Feature Code: 8000   (you can change to match your numbering scheme)
+	Feature Status: Enabled
+	Destination:	
+		Custom Destinations: Timeclock
+	Sumbit Changes and Apply
+Now you will see in Feature Codes that Timeclock was added with the code you assigned (8000) and it should be enabled.
+

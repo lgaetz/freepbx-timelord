@@ -1,0 +1,11 @@
+Please enter your User ID followed by the pound key.
+
+Please enter your Password followed by the pound key.
+
+Thank you, you have successfully clocked in.
+
+Thank you, you have successfully clocked out.
+
+System Error, please contact the administrator.
+
+Login Incorrect
