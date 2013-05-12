@@ -1,0 +1,23 @@
+<module>
+	<rawname>timeclock</rawname>
+	<name>Timeclock</name>
+	<version>0.0.1</version>
+	<publisher>POSSA</publisher>
+	<candisable>yes</candisable>
+	<canuninstall>yes</canuninstall>
+	<category>Other</category>
+	<changelog>
+		*0.0.1* alpha release
+	</changelog>	
+	<depends>
+		<module>core</module>
+              <version>ge 2.6</version>
+	</depends>
+	<description>FreePBX voice interface for php timeclock installation</description>
+	<menuitems>
+		<trunkbalance>Timeclock</trunkbalance>
+	</menuitems>
+	<info>https://github.com/POSSA/freepbx-timeclock/wiki</info>
+	<location>https://github.com/POSSA/freepbx-timeclock/</location>
+
+</module>
