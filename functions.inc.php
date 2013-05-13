@@ -19,36 +19,91 @@ if (!defined('FREEPBX_IS_AUTH')) { die('No direct script access allowed'); }
 
 
 //  check for settings and return
-function timeclock_settings() {
-	$sql = "SELECT * FROM `timeclock_settings` WHERE `key` = '1'";
+function timelord_settings() {
+	$sql = "SELECT * FROM `timelord_settings` WHERE `key` = '1'";
 	$results = sql($sql,"getAll",DB_FETCHMODE_ASSOC);
 	return is_array($results)?$results:array();
 }
 
 // store settings
-function timeclock_store($id,$post){
+function timelord_store($id,$post){
 	global $db;
 
 	$var1 = $db->escapeSimple($post['host']);
 	$var2 = $db->escapeSimple($post['user']);
 	$var3 = $db->escapeSimple($post['password']);
-
-	needreload();
-	
+	$var4 = $db->escapeSimple($post['database']);
+	$var5 = $db->escapeSimple($post['tableprefix']);
 
 	$results = sql("
-		UPDATE `timeclock_settings` 
+		UPDATE `timelord_settings` 
 		SET 
-			host = '$var1', 
-			user = '$var2', 
-			password = '$var3'
-		WHERE id = '$id'");
+			`host` = '$var1', 
+			`user` = '$var2', 
+			`password` = '$var3',
+			`database` = '$var4',
+			`tableprefix` = '$var5'
+		WHERE `key` = '$id'");
+
+	timelord_saveglobalvar($var1, TL_host);
+	timelord_saveglobalvar($var2, TL_user);
+	timelord_saveglobalvar($var3, TL_password);
+	timelord_saveglobalvar($var4, TL_database);
+	timelord_saveglobalvar($var5, TL_tableprefix);
+	
+	needreload();
 }
 
-function timeclock_vercheck() {
+// this function required to make the feature code work
+function timelord_get_config($engine) {
+	$modulename = 'timelord';
+
+	// This generates the dialplan
+	global $ext;
+	global $asterisk_conf;
+	switch($engine) {
+		case "asterisk":
+			if (is_array($featurelist = featurecodes_getModuleFeatures($modulename))) {
+				foreach($featurelist as $item) {
+					$featurename = $item['featurename'];
+					$fname = $modulename.'_'.$featurename;
+					if (function_exists($fname)) {
+						$fcc = new featurecode($modulename, $featurename);
+						$fc = $fcc->getCodeActive();
+						unset($fcc);
+
+						if ($fc != '')
+							$fname($fc);
+					} else {
+						$ext->add('from-internal-additional', 'debug', '', new ext_noop($modulename.": No func $fname"));
+					}
+				}
+			}
+		break;
+	}
+}
+
+function timelord_timelord($c) {
+	global $ext;
+	global $asterisk_conf;
+
+	$id = "app-timelord"; // The context to be included
+
+	$ext->addInclude('from-internal-additional', $id); // Add the include from from-internal
+	$ext->add($id, $c, '', new ext_answer(''));
+	$ext->add($id, $c, '', new ext_wait(1));
+	$ext->add($id, $c, '', new ext_Hangup);
+}
+
+
+function timelord_saveglobalvar($value, $variable)  {
+	$check = sql("REPLACE INTO globals (value,variable) VALUES ('$value', '$variable')");
+}
+
+function timelord_vercheck() {
 	$newver = false;
-	$module_local = timeclock_xml2array("modules/timeclock/module.xml");
-	$module_remote = timeclock_xml2array("https://raw.github.com/POSSA/freepbx-timeclock/master/module.xml");
+	$module_local = timelord_xml2array("modules/timelord/module.xml");
+	$module_remote = timelord_xml2array("https://raw.github.com/POSSA/freepbx-timelord/master/module.xml");
 	
 	if ( $module_remote[module][version] > $module_local[module][version]) {
 		$newver = true;
@@ -57,7 +112,7 @@ function timeclock_vercheck() {
 }
 
 //Parse XML file into an array
-function timeclock_xml2array($url, $get_attributes = 1, $priority = 'tag')  {
+function timelord_xml2array($url, $get_attributes = 1, $priority = 'tag')  {
 	$contents = "";
 	if (!function_exists('xml_parser_create'))
 	{
